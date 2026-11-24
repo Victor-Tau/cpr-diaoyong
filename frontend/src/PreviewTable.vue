@@ -6,6 +6,7 @@ const selected = defineModel<string[]>({ required: true })
 
 const labels: Record<Status, string> = {
   active: '订阅有效',
+  initial: '未满排序天数',
   expired: '周期已结束',
   unknown: '订阅信息不足',
   excluded: '已停用编排',

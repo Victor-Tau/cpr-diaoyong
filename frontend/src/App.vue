@@ -107,6 +107,13 @@ onMounted(load)
         {{ pending === 'query' ? '查询中…' : '查询' }}
       </button>
     </div>
+    <div v-if="options" class="policy note">
+      <p>建议权重范围 {{ options.weightPolicy.minWeight }}–{{ options.weightPolicy.maxWeight }}</p>
+      <p v-if="options.weightPolicy.rankingAfterDays > 0">
+        订阅未满 {{ options.weightPolicy.rankingAfterDays }} 天时，统一建议权重 {{ options.weightPolicy.initialWeight }}
+      </p>
+      <p>在插件设置的「停用编排的账号 ID」中添加或移除完整的 <code>acct_…</code> ID，即可关闭或恢复该账号的编排。</p>
+    </div>
 
     <p v-if="pending === 'load'" class="status" role="status">正在加载分组…</p>
     <p v-if="options && !options.groups.length" class="status">暂无可选分组</p>
@@ -168,6 +175,8 @@ body { margin: 0; }
 }
 .status, .note { margin: 0; }
 .note { align-self: center; color: var(--z-color-text-secondary, GrayText); }
+.policy { display: grid; gap: .25rem; }
+.policy p { margin: 0; }
 .error { color: var(--z-color-error-text, CanvasText); }
 .actions { justify-content: space-between; }
 </style>

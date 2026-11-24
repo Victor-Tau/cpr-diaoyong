@@ -22,7 +22,7 @@ use uuid::Uuid;
 
 use crate::{
     gateway::{self, Account, GatewayError, Group, Subscription},
-    ranking::{self, Order, Status},
+    ranking::{self, Order, Status, WeightPolicy},
 };
 
 const JSON: &str = "application/json";
@@ -69,6 +69,10 @@ pub(crate) struct Configuration {
     group_ids: String,
     plan_types: String,
     excluded_account_ids: String,
+    min_weight: u16,
+    max_weight: u16,
+    ranking_after_days: u16,
+    initial_weight: Option<u16>,
 }
 
 impl Default for Configuration {
@@ -77,6 +81,10 @@ impl Default for Configuration {
             group_ids: String::new(),
             plan_types: "plus".into(),
             excluded_account_ids: String::new(),
+            min_weight: 1,
+            max_weight: 100,
+            ranking_after_days: 0,
+            initial_weight: None,
         }
     }
 }
@@ -98,7 +106,7 @@ struct ApplyRequest {
 
 struct Preview {
     created_at: Instant,
-    active_until: Option<DateTime<Utc>>,
+    valid_until: Option<DateTime<Utc>>,
     request: PreviewRequest,
     accounts: BTreeMap<String, Account>,
     weights: BTreeMap<String, u16>,
@@ -108,8 +116,8 @@ impl Preview {
     fn is_valid(&self) -> bool {
         self.created_at.elapsed() < PREVIEW_LIFETIME
             && self
-                .active_until
-                .is_none_or(|expires_at| expires_at > Utc::now())
+                .valid_until
+                .is_none_or(|deadline| deadline > Utc::now())
     }
 }
 
@@ -117,6 +125,7 @@ pub(crate) struct App {
     group_ids: BTreeSet<String>,
     plan_types: Vec<String>,
     excluded_account_ids: BTreeSet<String>,
+    weight_policy: Result<WeightPolicy, &'static str>,
     previews: Mutex<BTreeMap<Uuid, Preview>>,
     applying: Mutex<()>,
 }
@@ -173,6 +182,12 @@ impl App {
             excluded_account_ids: split_setting(&config.excluded_account_ids)
                 .map(str::to_owned)
                 .collect(),
+            weight_policy: WeightPolicy::new(
+                config.min_weight,
+                config.max_weight,
+                config.ranking_after_days,
+                config.initial_weight,
+            ),
             previews: Mutex::default(),
             applying: Mutex::default(),
         }
@@ -215,9 +230,14 @@ impl App {
     }
 
     async fn options(&self, host: &HostClient) -> Result<Response, ApiError> {
-        Ok(ok(
-            json!({ "groups": self.available_groups(host).await?, "planTypes": self.plan_types }),
-        ))
+        let weight_policy = self
+            .weight_policy
+            .map_err(|message| ApiError::new(400, message))?;
+        Ok(ok(json!({
+            "groups": self.available_groups(host).await?,
+            "planTypes": self.plan_types,
+            "weightPolicy": weight_policy,
+        })))
     }
 
     async fn available_group(&self, host: &HostClient, group_id: &str) -> Result<(), ApiError> {
@@ -258,6 +278,9 @@ impl App {
         host: &HostClient,
         request: PreviewRequest,
     ) -> Result<Response, ApiError> {
+        let weight_policy = self
+            .weight_policy
+            .map_err(|message| ApiError::new(400, message))?;
         if !self.plan_types.contains(&request.plan_type) {
             return Err(ApiError::new(400, "该套餐不在插件配置范围内"));
         }
@@ -271,7 +294,7 @@ impl App {
             .buffer_unordered(SUBSCRIPTION_CONCURRENCY)
             .collect::<Vec<_>>()
             .await;
-        let rows = ranking::rank(&results, request.order, Utc::now());
+        let rows = ranking::rank(&results, request.order, Utc::now(), weight_policy);
         let weights: BTreeMap<_, _> = rows
             .iter()
             .filter_map(|row| {
@@ -284,7 +307,7 @@ impl App {
         }
         let preview_id = Uuid::new_v4();
         let body = json!({ "previewId": preview_id, "rows": rows });
-        let active_until = rows.iter().filter_map(|row| row.active_until).min();
+        let valid_until = rows.iter().filter_map(|row| row.valid_until).min();
         let mut previews = self.previews.lock().await;
         previews.retain(|_, preview| preview.is_valid());
         if previews.len() >= MAX_PREVIEWS
@@ -299,7 +322,7 @@ impl App {
             preview_id,
             Preview {
                 created_at: Instant::now(),
-                active_until,
+                valid_until,
                 request,
                 accounts,
                 weights,
@@ -340,7 +363,7 @@ impl App {
         if current != preview.accounts || !preview.is_valid() {
             return Err(ApiError::new(
                 409,
-                "账号资料、分组成员、权重或订阅期限已变化，请重新查询",
+                "账号资料、分组成员、权重或订阅状态已变化，请重新查询",
             ));
         }
 

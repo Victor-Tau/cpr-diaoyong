@@ -3,7 +3,7 @@
   "publisher": "cpr-diaoyong",
   "name": "subscription-weights",
   "displayName": "订阅权重编排",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "查询订阅周期并在确认后更新账号权重",
   "license": "UNLICENSED",
   "engines": { "codex-proxy-rs": "~3.54.3" },
@@ -34,9 +34,40 @@
       },
       "excludedAccountIds": {
         "type": "string",
-        "title": "停用编排的账号",
-        "description": "填写账号列表中的 CPR 账号 ID，用逗号分隔。移除 ID 后该账号可重新参与",
+        "title": "停用编排的账号 ID",
+        "description": "填写完整的 acct_… ID，例如 acct_abc123,acct_def456。支持逗号或换行分隔，删除 ID 即可恢复该账号的编排",
         "default": ""
+      },
+      "minWeight": {
+        "type": "integer",
+        "title": "最低权重",
+        "description": "允许的最低建议权重，已到期订阅使用此值",
+        "minimum": 1,
+        "maximum": 100,
+        "default": 1
+      },
+      "maxWeight": {
+        "type": "integer",
+        "title": "最高权重",
+        "description": "时间排序中首位使用的权重，须大于或等于最低权重",
+        "minimum": 1,
+        "maximum": 100,
+        "default": 100
+      },
+      "rankingAfterDays": {
+        "type": "integer",
+        "title": "订阅开始满多少天后排序",
+        "description": "每满 24 小时计 1 天。0 表示立即参与排序",
+        "minimum": 0,
+        "maximum": 65535,
+        "default": 0
+      },
+      "initialWeight": {
+        "type": "integer",
+        "title": "未满排序天数时的权重",
+        "description": "未满天数的有效订阅统一使用此值，须在最低和最高权重之间。留空使用最低权重",
+        "minimum": 1,
+        "maximum": 100
       }
     }
   }

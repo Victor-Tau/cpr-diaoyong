@@ -22,10 +22,16 @@ declare global {
 export interface Options {
   groups: { id: string, name: string }[]
   planTypes: string[]
+  weightPolicy: {
+    minWeight: number
+    maxWeight: number
+    rankingAfterDays: number
+    initialWeight: number
+  }
 }
 
 export type Order = 'startsAt' | 'expiresAt'
-export type Status = 'active' | 'expired' | 'unknown' | 'excluded' | 'disabled' | 'unsupported'
+export type Status = 'active' | 'initial' | 'expired' | 'unknown' | 'excluded' | 'disabled' | 'unsupported'
 
 export interface Row {
   id: string
