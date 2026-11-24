@@ -1,0 +1,43 @@
+{
+  "manifestVersion": 2,
+  "publisher": "cpr-diaoyong",
+  "name": "subscription-weights",
+  "displayName": "订阅权重编排",
+  "version": "0.1.0",
+  "description": "查询订阅周期并在确认后更新账号权重",
+  "license": "UNLICENSED",
+  "engines": { "codex-proxy-rs": "~3.54.3" },
+  "main": "bin/cpr-diaoyong",
+  "runtime": "trustedProcess",
+  "contributes": { "management": { "version": 2 } },
+  "resources": {
+    "web/index.html": "text/html",
+    "web/app.js": "text/javascript",
+    "web/app.css": "text/css"
+  },
+  "configurationSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "groupIds": {
+        "type": "string",
+        "title": "可编排的分组",
+        "description": "用逗号分隔分组 ID，留空可在页面选择任意启用分组",
+        "default": ""
+      },
+      "planTypes": {
+        "type": "string",
+        "title": "可编排的套餐",
+        "description": "用逗号分隔套餐标识，例如 plus,pro",
+        "pattern": "[A-Za-z0-9]",
+        "default": "plus"
+      },
+      "excludedAccountIds": {
+        "type": "string",
+        "title": "停用编排的账号",
+        "description": "填写账号列表中的 CPR 账号 ID，用逗号分隔。移除 ID 后该账号可重新参与",
+        "default": ""
+      }
+    }
+  }
+}
