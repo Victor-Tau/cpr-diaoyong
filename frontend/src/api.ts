@@ -30,6 +30,16 @@ export interface Options {
   }
 }
 
+export interface Settings {
+  groupIds: string
+  planTypes: string
+  excludedAccountIds: string
+  minWeight: number
+  maxWeight: number
+  rankingAfterDays: number
+  initialWeight?: number
+}
+
 export type Order = 'startsAt' | 'expiresAt'
 export type Status = 'active' | 'initial' | 'expired' | 'unknown' | 'excluded' | 'disabled' | 'unsupported'
 
@@ -65,6 +75,8 @@ async function request<T>(path: string, data?: object): Promise<T> {
 }
 
 export const getOptions = () => request<Options>('options')
+export const getSettings = () => request<Settings>('settings')
+export const saveSettings = (settings: Settings) => request<{ changed: boolean }>('settings', settings)
 
 export const queryPreview = (groupId: string, planType: string, order: Order) =>
   request<Preview>('preview', { groupId, planType, order })

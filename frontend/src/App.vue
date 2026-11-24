@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { computed, onMounted, shallowRef } from 'vue'
+import { computed, onMounted, shallowRef, useTemplateRef } from 'vue'
 import { applyPreview, getOptions, queryPreview } from './api'
 import type { Options, Order, Preview } from './api'
 import PreviewTable from './PreviewTable.vue'
+import SettingsDialog from './SettingsDialog.vue'
 
+const settingsDialog = useTemplateRef('settingsDialog')
 const options = shallowRef<Options>()
 const group = shallowRef('')
 const plan = shallowRef('plus')
@@ -28,9 +30,13 @@ async function load() {
   failure.value = ''
   try {
     options.value = await getOptions()
-    plan.value = options.value.planTypes.includes('plus') ? 'plus' : (options.value.planTypes[0] ?? '')
+    if (!options.value.planTypes.includes(plan.value)) {
+      plan.value = options.value.planTypes.includes('plus') ? 'plus' : (options.value.planTypes[0] ?? '')
+    }
+    if (!options.value.groups.some(item => item.id === group.value)) group.value = ''
   }
   catch (error) {
+    options.value = undefined
     failure.value = error instanceof Error ? error.message : '加载分组失败'
   }
   finally {
@@ -77,34 +83,45 @@ async function apply() {
   }
 }
 
+async function settingsSaved() {
+  clearPreview()
+  await load()
+  if (!failure.value) notice.value = '已保存设置，请重新查询'
+}
+
 onMounted(load)
 </script>
 
 <template>
   <main class="panel">
-    <div v-if="options" class="toolbar">
-      <div class="field">
-        <label for="account-group">账号分组</label>
-        <select id="account-group" v-model="group" :disabled="Boolean(pending)" @change="clearPreview">
-          <option disabled value="">选择分组</option>
-          <option v-for="item in options.groups" :key="item.id" :value="item.id">{{ item.name }}</option>
-        </select>
-      </div>
-      <div class="field">
-        <label for="account-plan">套餐</label>
-        <select id="account-plan" v-model="plan" class="plan" :disabled="Boolean(pending)" @change="clearPreview">
-          <option v-for="item in options.planTypes" :key="item" :value="item">{{ item }}</option>
-        </select>
-      </div>
-      <div class="field">
-        <label for="rank-order">排序依据</label>
-        <select id="rank-order" v-model="order" :disabled="Boolean(pending)" @change="clearPreview">
-          <option value="startsAt">开始时间优先</option>
-          <option value="expiresAt">到期时间优先</option>
-        </select>
-      </div>
-      <button type="button" class="button" :disabled="!canQuery" @click="query">
-        {{ pending === 'query' ? '查询中…' : '查询' }}
+    <div class="toolbar">
+      <template v-if="options">
+        <div class="field">
+          <label for="account-group">账号分组</label>
+          <select id="account-group" v-model="group" :disabled="Boolean(pending)" @change="clearPreview">
+            <option disabled value="">选择分组</option>
+            <option v-for="item in options.groups" :key="item.id" :value="item.id">{{ item.name }}</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="account-plan">套餐</label>
+          <select id="account-plan" v-model="plan" class="plan" :disabled="Boolean(pending)" @change="clearPreview">
+            <option v-for="item in options.planTypes" :key="item" :value="item">{{ item }}</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="rank-order">排序依据</label>
+          <select id="rank-order" v-model="order" :disabled="Boolean(pending)" @change="clearPreview">
+            <option value="startsAt">开始时间优先</option>
+            <option value="expiresAt">到期时间优先</option>
+          </select>
+        </div>
+        <button type="button" class="button" :disabled="!canQuery" @click="query">
+          {{ pending === 'query' ? '查询中…' : '查询' }}
+        </button>
+      </template>
+      <button type="button" class="button secondary settings-button" aria-haspopup="dialog" :disabled="Boolean(pending)" @click="settingsDialog?.open()">
+        设置
       </button>
     </div>
     <div v-if="options" class="policy note">
@@ -112,7 +129,6 @@ onMounted(load)
       <p v-if="options.weightPolicy.rankingAfterDays > 0">
         订阅未满 {{ options.weightPolicy.rankingAfterDays }} 天时，统一建议权重 {{ options.weightPolicy.initialWeight }}
       </p>
-      <p>在插件设置的「停用编排的账号 ID」中添加或移除完整的 <code>acct_…</code> ID，即可关闭或恢复该账号的编排。</p>
     </div>
 
     <p v-if="pending === 'load'" class="status" role="status">正在加载分组…</p>
@@ -131,6 +147,7 @@ onMounted(load)
         </button>
       </div>
     </template>
+    <SettingsDialog ref="settingsDialog" @saved="settingsSaved" />
   </main>
 </template>
 
@@ -168,8 +185,11 @@ body { margin: 0; }
   color: var(--z-color-text-light-solid, HighlightText);
 }
 .button:hover:not(:disabled) { background: var(--z-color-primary-hover, Highlight); }
+.button.secondary { background: var(--z-color-fill-secondary, ButtonFace); color: inherit; }
+.button.secondary:hover:not(:disabled) { background: var(--z-color-fill, ButtonFace); }
+.settings-button { margin-inline-start: auto; }
 .button:disabled, .field select:disabled { opacity: .55; cursor: default; }
-.button:focus-visible, .field select:focus-visible, input:focus-visible {
+.button:focus-visible, .field select:focus-visible, input:focus-visible, textarea:focus-visible {
   outline: 2px solid var(--z-color-primary, Highlight);
   outline-offset: 2px;
 }

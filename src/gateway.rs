@@ -8,11 +8,12 @@ use gateway_plugin_sdk::{
     client::{HostClient, HttpBody, HttpFrame, HttpRequest},
 };
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
-use serde_json::json;
+use serde_json::{Value, json};
 
 const PAGE_SIZE: &str = "100";
 const MAX_RESPONSE_BYTES: usize = 16 * 1024 * 1024;
 const ACCOUNT_PATH: &str = "/api/admin/accounts";
+const PLUGIN_INSTANCES: &str = "/api/admin/plugins/instances";
 
 #[derive(Debug)]
 pub(crate) struct GatewayError(pub(crate) String);
@@ -67,6 +68,53 @@ pub(crate) struct Subscription {
     pub(crate) starts_at_display: Option<String>,
     pub(crate) expires_at: DateTime<Utc>,
     pub(crate) expires_at_display: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PluginInstance {
+    pub(crate) id: String,
+    pub(crate) artifact_sha256: String,
+    pub(crate) configuration: Value,
+    pub(crate) enabled: bool,
+    name: String,
+    bindings: Vec<Value>,
+    revision: u64,
+}
+
+pub(crate) async fn plugin_instance(
+    host: &HostClient,
+    instance_id: &str,
+) -> Result<Option<PluginInstance>, GatewayError> {
+    let instances: Vec<PluginInstance> = admin(host, PLUGIN_INSTANCES, &[], None).await?;
+    Ok(instances
+        .into_iter()
+        .find(|instance| instance.id == instance_id))
+}
+
+pub(crate) async fn save_plugin_configuration(
+    host: &HostClient,
+    instance: PluginInstance,
+    configuration: Value,
+) -> Result<(), GatewayError> {
+    let _: Value = admin(
+        host,
+        "/api/admin/plugins/instances/update",
+        &[],
+        Some(json!({
+            "id": instance.id,
+            "instance": {
+                "artifactSha256": instance.artifact_sha256,
+                "name": instance.name,
+                "enabled": instance.enabled,
+                "bindings": instance.bindings,
+                "expectedRevision": instance.revision,
+                "configuration": configuration,
+            },
+        })),
+    )
+    .await?;
+    Ok(())
 }
 
 async fn admin<T: DeserializeOwned>(

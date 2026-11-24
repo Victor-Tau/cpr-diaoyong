@@ -20,8 +20,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     )
     .await?;
     session.set_call_budgets(CallBudgets::from([(Stage::Management, 170_000)]))?;
-    let configuration = serde_json::from_value(session.handshake().configuration.clone())?;
-    let app = Arc::new(management::App::new(configuration));
+    let handshake = session.handshake();
+    let configuration = serde_json::from_value(handshake.configuration.clone())?;
+    let app = Arc::new(management::App::new(
+        configuration,
+        handshake.artifact_sha256.clone(),
+    ));
     let plugin = PluginBuilder::from_json(include_bytes!("../plugin.json"))?
         .management(management::registration(), move |call| {
             let app = Arc::clone(&app);

@@ -15,7 +15,7 @@ use gateway_plugin_sdk::{
     },
     client::{HostClient, TypedCall, TypedReply},
 };
-use serde::{Deserialize, de::DeserializeOwned};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::{Value, json};
 use tokio::sync::Mutex;
 use uuid::Uuid;
@@ -32,19 +32,25 @@ const SUBSCRIPTION_CONCURRENCY: usize = 8;
 
 pub(crate) fn registration() -> ManagementRegistration {
     ManagementRegistration {
-        routes: [("GET", "options"), ("POST", "preview"), ("POST", "apply")]
-            .into_iter()
-            .map(|(method, path)| ManagementRoute {
-                method: method.into(),
-                path: path.into(),
-                request_content_types: if method == "POST" {
-                    vec![JSON.into()]
-                } else {
-                    Vec::new()
-                },
-                response_content_types: vec![JSON.into()],
-            })
-            .collect(),
+        routes: [
+            ("GET", "options"),
+            ("GET", "settings"),
+            ("POST", "settings"),
+            ("POST", "preview"),
+            ("POST", "apply"),
+        ]
+        .into_iter()
+        .map(|(method, path)| ManagementRoute {
+            method: method.into(),
+            path: path.into(),
+            request_content_types: if method == "POST" {
+                vec![JSON.into()]
+            } else {
+                Vec::new()
+            },
+            response_content_types: vec![JSON.into()],
+        })
+        .collect(),
         resources: ["web/index.html", "web/app.js", "web/app.css"]
             .into_iter()
             .map(|path| ManagementResource {
@@ -63,7 +69,7 @@ pub(crate) fn registration() -> ManagementRegistration {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize, PartialEq, Eq)]
 #[serde(default, rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct Configuration {
     group_ids: String,
@@ -72,7 +78,19 @@ pub(crate) struct Configuration {
     min_weight: u16,
     max_weight: u16,
     ranking_after_days: u16,
+    #[serde(skip_serializing_if = "Option::is_none")]
     initial_weight: Option<u16>,
+}
+
+impl Configuration {
+    fn weight_policy(&self) -> Result<WeightPolicy, &'static str> {
+        WeightPolicy::new(
+            self.min_weight,
+            self.max_weight,
+            self.ranking_after_days,
+            self.initial_weight,
+        )
+    }
 }
 
 impl Default for Configuration {
@@ -122,6 +140,8 @@ impl Preview {
 }
 
 pub(crate) struct App {
+    configuration: Configuration,
+    artifact_sha256: String,
     group_ids: BTreeSet<String>,
     plan_types: Vec<String>,
     excluded_account_ids: BTreeSet<String>,
@@ -168,7 +188,7 @@ fn ok(body: Value) -> Response {
 }
 
 impl App {
-    pub(crate) fn new(config: Configuration) -> Self {
+    pub(crate) fn new(config: Configuration, artifact_sha256: String) -> Self {
         let mut seen = BTreeSet::new();
         let plan_types = split_setting(&config.plan_types)
             .map(str::to_ascii_lowercase)
@@ -182,12 +202,9 @@ impl App {
             excluded_account_ids: split_setting(&config.excluded_account_ids)
                 .map(str::to_owned)
                 .collect(),
-            weight_policy: WeightPolicy::new(
-                config.min_weight,
-                config.max_weight,
-                config.ranking_after_days,
-                config.initial_weight,
-            ),
+            weight_policy: config.weight_policy(),
+            configuration: config,
+            artifact_sha256,
             previews: Mutex::default(),
             applying: Mutex::default(),
         }
@@ -199,6 +216,14 @@ impl App {
     ) -> Result<TypedReply<ManagementResponse>, PluginFault> {
         let result = match (call.request.method.as_str(), call.request.path.as_str()) {
             ("GET", "options") => self.options(&call.host).await,
+            ("GET", "settings") => Ok(ok(json!(self.configuration))),
+            ("POST", "settings") => match parse(&call.payload) {
+                Ok(configuration) => {
+                    self.save_settings(&call.host, &call.context.instance_id, configuration)
+                        .await
+                }
+                Err(error) => Err(error),
+            },
             ("POST", "preview") => match parse(&call.payload) {
                 Ok(request) => self.preview(&call.host, request).await,
                 Err(error) => Err(error),
@@ -219,6 +244,56 @@ impl App {
             headers: Vec::new(),
         })
         .with_payload(payload))
+    }
+
+    async fn save_settings(
+        &self,
+        host: &HostClient,
+        instance_id: &str,
+        configuration: Configuration,
+    ) -> Result<Response, ApiError> {
+        configuration
+            .weight_policy()
+            .map_err(|message| ApiError::new(400, message))?;
+        if !configuration
+            .plan_types
+            .bytes()
+            .any(|value| value.is_ascii_alphanumeric())
+        {
+            return Err(ApiError::new(400, "请填写可编排的套餐，例如 plus"));
+        }
+        if configuration
+            .initial_weight
+            .is_some_and(|weight| !(1..=100).contains(&weight))
+        {
+            return Err(ApiError::new(
+                400,
+                "未满排序天数时的权重必须介于 1 和 100 之间",
+            ));
+        }
+        if configuration == self.configuration {
+            return Ok(ok(json!({ "changed": false })));
+        }
+        let _writing = self
+            .applying
+            .try_lock()
+            .map_err(|_| ApiError::new(409, "正在保存设置或应用权重，请稍后再试"))?;
+        let stale = || ApiError::new(409, "插件设置已变更，请重新打开设置后再试");
+        let instance = gateway::plugin_instance(host, instance_id)
+            .await?
+            .ok_or_else(stale)?;
+        if instance.artifact_sha256 != self.artifact_sha256
+            || !instance.enabled
+            || serde_json::from_value::<Configuration>(instance.configuration.clone())
+                .ok()
+                .as_ref()
+                != Some(&self.configuration)
+        {
+            return Err(stale());
+        }
+        gateway::save_plugin_configuration(host, instance, json!(configuration)).await?;
+        self.previews.lock().await.clear();
+        Ok(ok(json!({ "changed": true })))
     }
 
     async fn available_groups(&self, host: &HostClient) -> Result<Vec<Group>, GatewayError> {

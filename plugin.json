@@ -3,7 +3,7 @@
   "publisher": "cpr-diaoyong",
   "name": "subscription-weights",
   "displayName": "订阅权重编排",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "查询订阅周期并在确认后更新账号权重",
   "license": "UNLICENSED",
   "engines": { "codex-proxy-rs": "~3.54.3" },
