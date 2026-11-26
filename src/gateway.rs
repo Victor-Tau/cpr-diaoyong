@@ -42,12 +42,13 @@ pub(crate) struct Group {
     pub(crate) name: String,
 }
 
-#[derive(Deserialize, PartialEq, Eq)]
+#[derive(Debug, Deserialize, PartialEq, Eq)]
 pub(crate) struct Capabilities {
     pub(crate) subscription: bool,
 }
 
-#[derive(Deserialize, PartialEq, Eq)]
+/// 权重预览使用的账号资料，宿主的 updatedAt 也会随后台额度观测而变化
+#[derive(Debug, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Account {
     pub(crate) id: String,
@@ -58,7 +59,6 @@ pub(crate) struct Account {
     pub(crate) capabilities: Capabilities,
     pub(crate) enabled: bool,
     pub(crate) weight: u16,
-    pub(crate) updated_at: String,
 }
 
 #[derive(Deserialize)]
@@ -289,4 +289,28 @@ pub(crate) async fn update_weight(
         return Err(GatewayError("宿主返回的更新账号与预览不一致".into()));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn quota_observation_does_not_change_the_account_snapshot() {
+        let mut account = json!({
+            "id": "acct_fixture",
+            "name": "Fixture",
+            "planType": "plus",
+            "capabilities": { "subscription": true },
+            "enabled": true,
+            "weight": 40,
+            "updatedAt": "2026-11-26T00:00:00Z",
+        });
+        let preview: Account = serde_json::from_value(account.clone()).unwrap();
+
+        account["updatedAt"] = json!("2026-11-26T00:01:00Z");
+        let current: Account = serde_json::from_value(account).unwrap();
+
+        assert_eq!(preview, current);
+    }
 }

@@ -174,7 +174,6 @@ mod tests {
             capabilities: Capabilities { subscription: true },
             enabled: true,
             weight: 40,
-            updated_at: String::new(),
         }
     }
 
