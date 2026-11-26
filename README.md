@@ -1,10 +1,10 @@
 # 订阅权重编排
 
-Codex Proxy RS `3.54.x` 插件，要求宿主版本至少为 `3.54.3`。使用管理扩展 v2 和宿主内部 HTTP 分派，无需管理 API Key。
+Codex Proxy RS 插件，支持宿主版本 `>=3.54.3, <3.57.0`，包含 `3.55.3`。使用管理扩展 v2 和宿主内部 HTTP 分派，无需管理 API Key。插件通过独立进程通信，构建时使用固定版本的 `gateway-plugin-sdk`，无需随宿主每次更新而升级 SDK。
 
 ## 安装和使用
 
-1. 在「插件管理」上传 `dist/` 中与服务器平台对应的 `.tar.gz`，确认安装。本地提供的包适用于 Linux x86_64（glibc 2.34 或更新版本）。
+1. 从 [GitHub Releases](https://github.com/Victor-Tau/cpr-diaoyong/releases/latest) 下载与服务器平台对应的 `.tar.gz`，在「插件管理」上传并确认安装。Actions 发布的包适用于 Linux x86_64（glibc 2.35 或更新版本）。
 2. 打开「订阅权重编排」，选择账号分组和套餐，点击「查询」。默认套餐是 Plus，默认按本期订阅开始时间从早到晚排序，开始时间相同则比较到期时间。
 3. 核对订阅开始、到期以及当前和建议权重。取消勾选本次不更新的账号，再点「应用」。也可以选择「到期时间优先」后重新查询。
 
@@ -32,7 +32,9 @@ Codex Proxy RS `3.54.x` 插件，要求宿主版本至少为 `3.54.3`。使用�
 
 ## 构建
 
-需要 Rust `1.99.1`、Node.js 24 或更新版本，以及与目标宿主版本匹配的 [`cpr-plugin`](https://github.com/zyycn/codex-proxy-rs/blob/6900da36eedb3099d43c8c9bf5b8b97d82d15688/backend/apps/plugin-cli/README.md)。在此目录运行：
+推送 `v<插件版本>` 标签后，GitHub Actions 自动编译前后端、使用官方 CLI 打包，并发布 Release 和 SHA-256 校验文件。手动运行工作流仅构建并上传 Actions artifact。发布流程执行版本检查、前端类型检查和生产构建，不运行完整测试套件。
+
+本地构建需要 Rust `1.99.1`、Node.js 24 或更新版本，以及与当前 SDK 固定到同一提交的 [`cpr-plugin`](https://github.com/zyycn/codex-proxy-rs/blob/6900da36eedb3099d43c8c9bf5b8b97d82d15688/backend/apps/plugin-cli/README.md)。在此目录运行：
 
 ```bash
 npm --prefix frontend ci

@@ -1,0 +1,83 @@
+name: Build and release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    env:
+      CARGO_TERM_COLOR: always
+      TARGET: x86_64-unknown-linux-gnu
+      SDK_REV: 6900da36eedb3099d43c8c9bf5b8b97d82d15688
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Check release versions
+        shell: python
+        run: |
+          import json, os, tomllib
+          from pathlib import Path
+          manifest = json.loads(Path('plugin.json').read_text())
+          cargo = tomllib.loads(Path('Cargo.toml').read_text())
+          lock = tomllib.loads(Path('Cargo.lock').read_text())
+          version = manifest['version']
+          assert cargo['package']['version'] == version
+          assert next(p['version'] for p in lock['package'] if p['name'] == 'cpr-diaoyong') == version
+          assert cargo['dependencies']['gateway-plugin-sdk']['rev'] == os.environ['SDK_REV']
+          if os.environ['GITHUB_REF_TYPE'] == 'tag':
+              assert os.environ['GITHUB_REF_NAME'] == f'v{version}'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+          targets: x86_64-unknown-linux-gnu
+      - uses: Swatinem/rust-cache@v2
+      - name: Build frontend
+        run: |
+          npm --prefix frontend ci
+          npm --prefix frontend run build
+      - name: Build plugin
+        run: cargo build --release --locked --target "$TARGET"
+      - name: Install official packager
+        run: >-
+          cargo install --locked
+          --git https://github.com/zyycn/codex-proxy-rs.git --rev "$SDK_REV"
+          --root "$RUNNER_TEMP/cpr-tools"
+          --target-dir target/packager
+          codex-proxy-plugin-cli
+      - name: Package plugin
+        run: |
+          "$RUNNER_TEMP/cpr-tools/bin/cpr-plugin" package \
+            --manifest plugin.json \
+            --binary "target/$TARGET/release/cpr-diaoyong" \
+            --target "$TARGET" \
+            --resource-map web=frontend/dist \
+            --output-dir dist
+          cd dist
+          sha256sum --check *.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cpr-diaoyong-linux-x86_64
+          path: dist/*
+          if-no-files-found: error
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --verify-tag --title "$GITHUB_REF_NAME" \
+            --notes '放宽 CPR 宿主版本限制为 >=3.54.3, <3.57.0，包含 3.55.3。通过 GitHub Actions 编译并使用官方 CLI 打包，附 SHA-256 校验文件。安装包适用于 Linux x86_64，要求 glibc >=2.35。此版本完成生产构建及打包校验，未进行宿主运行验证。'
