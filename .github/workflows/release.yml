@@ -80,4 +80,4 @@ jobs:
         run: |
           gh release create "$GITHUB_REF_NAME" dist/* \
             --verify-tag --title "$GITHUB_REF_NAME" \
-            --notes '放宽 CPR 宿主版本限制为 >=3.54.3, <3.57.0，包含 3.55.3。通过 GitHub Actions 编译并使用官方 CLI 打包，附 SHA-256 校验文件。安装包适用于 Linux x86_64，要求 glibc >=2.35。此版本完成生产构建及打包校验，未进行宿主运行验证。'
+            --notes '放宽 CPR 宿主版本限制为 >=3.54.3, <3.59.0，允许安装到 3.57.2 和 3.58.x。保留固定 SDK 版本，无需随宿主每次更新而升级。通过 GitHub Actions 编译并使用官方 CLI 打包，附 SHA-256 校验文件。安装包适用于 Linux x86_64，要求 glibc >=2.35。此版本完成生产构建及打包校验，未进行完整测试或宿主运行验证。'
